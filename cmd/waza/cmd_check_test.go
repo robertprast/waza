@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -728,17 +729,13 @@ Body.
 	require.NoError(t, err)
 
 	result := output.String()
-	// All sub-item lines with status emojis should use 2-space gap after emoji
+	// Each status-emoji line must have exactly 2 spaces after the emoji (no more, no fewer).
+	emojiSpacing := regexp.MustCompile(`^(✅|❌|⚠️)  \S`)
+	emojiPrefix := regexp.MustCompile(`^(✅|❌|⚠️)`)
 	for _, line := range strings.Split(result, "\n") {
 		trimmed := strings.TrimSpace(line)
-		// Check indented lines starting with status emojis (sub-items)
-		if strings.HasPrefix(line, "   ") {
-			if strings.HasPrefix(trimmed, "✅ ") && !strings.HasPrefix(trimmed, "✅  ") {
-				t.Errorf("inconsistent spacing in line (expected 2 spaces after emoji): %q", line)
-			}
-			if strings.HasPrefix(trimmed, "❌ ") && !strings.HasPrefix(trimmed, "❌  ") {
-				t.Errorf("inconsistent spacing in line (expected 2 spaces after emoji): %q", line)
-			}
+		if emojiPrefix.MatchString(trimmed) && !emojiSpacing.MatchString(trimmed) {
+			t.Errorf("inconsistent spacing in line (expected exactly 2 spaces after emoji): %q", line)
 		}
 	}
 }
