@@ -319,8 +319,20 @@ waza tokens check code-explainer
 # ✅ Within budget
 ```
 
-Token limits are resolved in priority order: `.waza.yaml tokens.limits` → `.token-limits.json` (legacy, emits a deprecation warning) → built-in defaults.
+Token limits are resolved in priority order: `.waza.yaml tokens.limits` → `.token-limits.json` (deprecated; migrate to .waza.yaml) → built-in defaults.
 See the **[Token Limits guide](../../guides/token-limits/)** for configuration details, pattern syntax, and migration instructions.
+
+Configure per-file limits in `.waza.yaml`:
+
+```yaml
+tokens:
+  limits:
+    defaults:
+      "*.md": 2000
+      "skills/**/SKILL.md": 5000
+    overrides:
+      "skills/complex-skill/SKILL.md": 7500
+```
 
 ### waza tokens compare
 

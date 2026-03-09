@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/microsoft/waza/internal/projectconfig"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,4 +117,47 @@ func TestResolveLimitsConfig_OverridesOnly(t *testing.T) {
 	require.False(t, usedLegacy, "should not flag legacy when .waza.yaml has overrides")
 	require.NotNil(t, cfg.Defaults, "defaults map should be initialized even when only overrides are set")
 	require.Equal(t, 4000, cfg.Overrides["special.md"])
+}
+
+func TestResolveLimitsConfig_OverridesOnly_WazaYamlWinsOverLegacyJSON(t *testing.T) {
+	dir := t.TempDir()
+
+	yaml := "tokens:\n  limits:\n    overrides:\n      \"special.md\": 4000\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".waza.yaml"), []byte(yaml), 0644))
+
+	limitsJSON, err := json.Marshal(map[string]any{
+		"defaults":  map[string]int{"*.md": 10},
+		"overrides": map[string]int{"special.md": 20},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".token-limits.json"), limitsJSON, 0644))
+
+	cfg, usedLegacy := resolveLimitsConfig(dir)
+	require.False(t, usedLegacy, "overrides-only .waza.yaml should still take precedence over legacy limits")
+	require.NotNil(t, cfg.Defaults, "defaults map should be initialized even when only overrides are configured")
+	require.Equal(t, 4000, cfg.Overrides["special.md"], ".waza.yaml overrides should win over legacy limits")
+}
+
+// --- hasConfiguredTokenLimits tests ---
+
+func TestHasConfiguredTokenLimits(t *testing.T) {
+	tests := []struct {
+		name   string
+		limits *projectconfig.TokenLimitsConfig
+		want   bool
+	}{
+		{"nil", nil, false},
+		{"empty struct", &projectconfig.TokenLimitsConfig{}, true},
+		{"defaults only", &projectconfig.TokenLimitsConfig{Defaults: map[string]int{"*.md": 100}}, true},
+		{"overrides only", &projectconfig.TokenLimitsConfig{Overrides: map[string]int{"x.md": 50}}, true},
+		{"both", &projectconfig.TokenLimitsConfig{
+			Defaults:  map[string]int{"*.md": 100},
+			Overrides: map[string]int{"x.md": 50},
+		}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, hasConfiguredTokenLimits(tt.limits))
+		})
+	}
 }
