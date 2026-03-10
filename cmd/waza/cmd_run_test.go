@@ -29,6 +29,7 @@ func resetRunGlobals() {
 	tagFilters = nil
 	parallel = false
 	workers = 0
+	trials = 0
 	interpret = false
 	format = "default"
 	enableCache = false
@@ -491,6 +492,53 @@ func TestRunCommand_ParallelFlagDefaultWorkers(t *testing.T) {
 	intVal, err := cmd.Flags().GetInt("workers")
 	require.NoError(t, err)
 	assert.Equal(t, 0, intVal, "workers should default to 0 (runner defaults to 4)")
+}
+
+func TestRunCommand_TrialsFlagParsed(t *testing.T) {
+	cmd := newRunCommand()
+	require.NoError(t, cmd.ParseFlags([]string{"--trials", "5"}))
+
+	intVal, err := cmd.Flags().GetInt("trials")
+	require.NoError(t, err)
+	assert.Equal(t, 5, intVal)
+}
+
+func TestRunCommand_TrialsFlagInvalidValue(t *testing.T) {
+	resetRunGlobals()
+
+	specPath := createTestSpec(t, "mock")
+	cmd := newRunCommand()
+	cmd.SetArgs([]string{specPath, "--trials", "0"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--trials must be at least 1")
+}
+
+func TestRunCommand_TrialsOverridesSpec(t *testing.T) {
+	resetRunGlobals()
+
+	specPath := createTestSpec(t, "mock")
+	outFile := filepath.Join(t.TempDir(), "results.json")
+	cmd := newRunCommand()
+	cmd.SetArgs([]string{specPath, "--trials", "3", "--output", outFile})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+
+	var result models.EvaluationOutcome
+	require.NoError(t, json.Unmarshal(data, &result))
+	require.NotEmpty(t, result.TestOutcomes)
+	assert.Equal(t, 3, result.Setup.RunsPerTest)
+	assert.Len(t, result.TestOutcomes[0].Runs, 3)
+	assert.Equal(t, 3, result.TestOutcomes[0].Stats.TotalRuns)
 }
 
 func TestRunCommand_ParallelRunsMock(t *testing.T) {
@@ -2137,4 +2185,67 @@ tasks:
 	assert.True(t, enableCache, "cache should be enabled from .waza.yaml (not overridden)")
 	assert.True(t, verbose, "verbose should be true from .waza.yaml (not overridden)")
 	assert.True(t, sessionLog, "session-log should be true from .waza.yaml (not overridden)")
+}
+
+func TestRunCommandForSpec_NilCmd_OverridesTrials(t *testing.T) {
+	// Setup
+	tmp := t.TempDir()
+	specPath := filepath.Join(tmp, "eval.yaml")
+	taskPath := filepath.Join(tmp, "task.yaml")
+
+	// Create task file
+	require.NoError(t, os.WriteFile(taskPath, []byte(`
+id: t1
+name: test-task
+inputs:
+  prompt: test
+`), 0644))
+
+	// Create spec file pointing to task file
+	specYAML := fmt.Sprintf(`
+name: test-spec
+skill: test-skill
+version: 1.0.0
+config:
+  trials_per_task: 1
+  timeout_seconds: 10
+  executor: mock
+  model: mock-model
+tasks:
+  - %s
+graders:
+  - type: text
+    name: check
+metrics: []
+`, filepath.Base(taskPath))
+
+	require.NoError(t, os.WriteFile(specPath, []byte(specYAML), 0644))
+
+	// Save/Restore globals
+	oldTrials := trials
+	oldOutputPath := outputPath
+	oldContextDir := contextDir
+	oldFormat := format
+	defer func() {
+		trials = oldTrials
+		outputPath = oldOutputPath
+		contextDir = oldContextDir
+		format = oldFormat
+	}()
+
+	// Set flags
+	trials = 3
+	outputPath = ""
+	contextDir = tmp // Use temp dir so task.yaml is found
+	format = "default"
+
+	// Call
+	results, err := runCommandForSpec(nil, skillSpecPath{specPath: specPath})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.NotNil(t, results[0].outcome)
+
+	// Check overrides
+	require.Len(t, results[0].outcome.TestOutcomes, 1)
+	assert.Len(t, results[0].outcome.TestOutcomes[0].Runs, 3)
 }

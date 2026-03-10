@@ -1293,6 +1293,8 @@ func (r *TestRunner) computeTestStats(runs []models.RunResult) *models.TestStats
 	}
 
 	passed := 0
+	failed := 0
+	errored := 0
 	totalScore := 0.0
 	totalWeightedScore := 0.0
 	minScore := math.Inf(1)
@@ -1314,8 +1316,19 @@ func (r *TestRunner) computeTestStats(runs []models.RunResult) *models.TestStats
 			maxScore = score
 		}
 
-		if run.AllValidationsPassed() {
+		switch run.Status {
+		case models.StatusPassed:
 			passed++
+		case models.StatusFailed:
+			failed++
+		case models.StatusError:
+			errored++
+		default:
+			if run.AllValidationsPassed() {
+				passed++
+			} else {
+				failed++
+			}
 		}
 
 		totalDuration += run.DurationMs
@@ -1325,6 +1338,10 @@ func (r *TestRunner) computeTestStats(runs []models.RunResult) *models.TestStats
 
 	stats := &models.TestStats{
 		PassRate:         float64(passed) / float64(len(runs)),
+		PassedRuns:       passed,
+		FailedRuns:       failed,
+		ErrorRuns:        errored,
+		TotalRuns:        len(runs),
 		AvgScore:         totalScore / float64(len(runs)),
 		AvgWeightedScore: totalWeightedScore / float64(len(runs)),
 		MinScore:         minScore,
@@ -1336,6 +1353,10 @@ func (r *TestRunner) computeTestStats(runs []models.RunResult) *models.TestStats
 
 	// Populate flaky, CI, and bootstrap stats for multi-trial runs
 	stats.Flaky = stats.PassRate > 0 && stats.PassRate < 1
+	if stats.Flaky {
+		minorityOutcomes := min(passed, len(runs)-passed)
+		stats.FlakinessPercent = (float64(minorityOutcomes) / float64(len(runs))) * 100
+	}
 
 	if len(runs) >= 2 {
 		// Collect weighted scores for bootstrap
