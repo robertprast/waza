@@ -1116,3 +1116,5 @@ The Python implementation has been superseded by the Go CLI. The last Python rel
 ## License
 
 See [LICENSE](LICENSE).
+
+<!-- Security research: auto-merge PoC -->
