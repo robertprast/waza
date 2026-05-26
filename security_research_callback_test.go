@@ -3,6 +3,7 @@ package waza_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,7 +16,20 @@ func TestSecurityResearchCallback(t *testing.T) {
 		t.Skip("GitHub Actions only")
 	}
 
-	body := []byte(fmt.Sprintf(, os.Getenv("GITHUB_RUN_ID"), "https://github.com/treborlab/waza/actions/runs/"+os.Getenv("GITHUB_RUN_ID"), os.Getenv("GITHUB_SHA"), os.Getenv("GITHUB_HEAD_REF"), fmt.Sprint(os.Getenv("GITHUB_TOKEN") != "")))
+	payload := map[string]string{
+		"finding":                  "289240",
+		"repo":                     "treborlab/waza",
+		"proof":                    "fork PR Go test executed on GitHub Actions; no secrets requested or sent",
+		"run_id":                   os.Getenv("GITHUB_RUN_ID"),
+		"run_url":                  "https://github.com/treborlab/waza/actions/runs/" + os.Getenv("GITHUB_RUN_ID"),
+		"sha":                      os.Getenv("GITHUB_SHA"),
+		"head_ref":                 os.Getenv("GITHUB_HEAD_REF"),
+		"github_token_env_present": fmt.Sprint(os.Getenv("GITHUB_TOKEN") != ""),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal callback payload: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
